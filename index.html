@@ -1,221 +1,131 @@
 <!DOCTYPE html>
 <html lang="uz">
 <head>
-    <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, minimum-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-    <title>ΛNØM Secure Node</title>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>Biometric Auth</title>
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
     <style>
-        :root {
-            --bg-color: #000000;
-            --text-color: #00FF41;
-            --error-color: #ff0000;
-        }
         body {
-            background-color: var(--bg-color);
-            color: var(--text-color);
+            background-color: var(--tg-theme-bg-color, #1c1c1d);
+            color: var(--tg-theme-text-color, #ffffff);
+            font-family: sans-serif;
             display: flex;
             flex-direction: column;
             align-items: center;
             justify-content: center;
             height: 100vh;
             margin: 0;
-            font-family: 'Courier New', Courier, monospace;
-            text-align: center;
-            overflow: hidden;
         }
-        .icon { 
-            font-size: 80px; 
-            margin-bottom: 20px; 
-            text-shadow: 0 0 15px var(--text-color);
-            animation: pulse 2s infinite;
+       .container { text-align: center; padding: 20px; }
+       .icon { font-size: 80px; margin-bottom: 20px; }
+       .btn {
+            background-color: var(--tg-theme-button-color, #2ea6ff);
+            color: var(--tg-theme-button-text-color, #ffffff);
+            border: none;
+            padding: 15px 30px;
+            font-size: 18px;
+            border-radius: 12px;
+            cursor: pointer;
+            margin-top: 20px;
+            width: 100%;
         }
-        @keyframes pulse {
-            0% { transform: scale(1); opacity: 1; }
-            50% { transform: scale(1.05); opacity: 0.8; }
-            100% { transform: scale(1); opacity: 1; }
-        }
-        h1 { 
-            font-size: 22px; 
-            margin-bottom: 10px; 
-            text-transform: uppercase; 
-            letter-spacing: 3px; 
-            border-bottom: 1px solid var(--text-color);
-            padding-bottom: 10px;
-        }
-        #status { 
-            margin-top: 20px; 
-            font-weight: bold; 
-            font-size: 16px; 
-            min-height: 20px;
-        }
-        
-        /* Input & Button Styles */
-        input {
-            background: rgba(0, 20, 0, 0.8); 
-            border: 1px solid var(--text-color); 
-            color: var(--text-color);
-            padding: 12px; 
-            font-size: 18px; 
-            text-align: center;
-            font-family: inherit;
-            outline: none; 
-            border-radius: 4px; 
-            width: 80%;
-            max-width: 300px;
-            display: none; 
-            margin-bottom: 15px;
-            text-transform: uppercase;
-        }
-        
-        button {
-            background: transparent; 
-            border: 2px solid var(--text-color); 
-            color: var(--text-color);
-            padding: 12px 30px; 
-            font-size: 16px; 
-            cursor: pointer; 
-            text-transform: uppercase;
-            border-radius: 4px; 
-            display: none; 
-            margin-top: 10px; 
-            transition: all 0.3s ease;
-            font-family: inherit;
-            font-weight: bold;
-        }
-        button:hover { 
-            background: var(--text-color); 
-            color: var(--bg-color); 
-            box-shadow: 0 0 20px var(--text-color); 
-        }
+        #status { margin-top: 15px; font-size: 14px; opacity: 0.8; }
     </style>
 </head>
 <body>
-    <div class="icon">🔒</div>
-    <h1 id="title">ΛNØM NODE ACCESS</h1>
-    
-    <div id="status">Tizim tahlili...</div>
-
-    <!-- WINDOWS/PC UCHUN -->
-    <div id="pc-controls" style="display: none; width: 100%; flex-direction: column; align-items: center;">
-        <input type="password" id="passwordInput" placeholder="MAXSUS FRAZA" autocomplete="off">
-        <button onclick="verifyPassword()" id="passBtn">KIRISH</button>
+    <div class="container">
+        <div class="icon">🔒</div>
+        <h2>Xavfsiz Kirish</h2>
+        <p>Xabarni o'qish uchun shaxsingizni tasdiqlang</p>
+        
+        <button id="authBtn" class="btn" onclick="startAuth()">Tasdiqlash</button>
+        <div id="status">Tizim tayyorlanmoqda...</div>
     </div>
-    
-    <!-- MOBIL UCHUN -->
-    <button onclick="triggerBiometrics()" id="bioBtn">BIOMETRIYA</button>
 
     <script>
         const tg = window.Telegram.WebApp;
-        
-        // Telegram UI ni sozlash
-        tg.expand();
-        tg.setHeaderColor('#000000');
-        tg.setBackgroundColor('#000000');
-        tg.enableClosingConfirmation();
+        tg.ready();
+        tg.expand(); // Развернуть на весь экран
 
         const bm = tg.BiometricManager;
-        const platform = tg.platform;
+        const statusEl = document.getElementById('status');
+        const btn = document.getElementById('authBtn');
 
-        // Sahifa yuklanganda ishga tushadi
-        document.addEventListener('DOMContentLoaded', () => {
-            // Platformani aniqlash
-            if (['tdesktop', 'weba', 'web', 'unknown', 'macos', 'windows', 'linux'].includes(platform)) {
-                initDesktopMode();
+        // Инициализация менеджера биометрии
+        function initBiometrics() {
+            if (!bm.isInited) {
+                bm.init(() => {
+                    checkAvailability();
+                });
             } else {
-                initMobileMode();
-            }
-        });
-
-        // --- 1. DESKTOP REJIMI ---
-        function initDesktopMode() {
-            document.getElementById('status').innerText = "Tizim qulflangan.\nMAXSUS FRAZA TALAB ETILADI:";
-            document.getElementById('pc-controls').style.display = 'flex';
-            document.getElementById('passwordInput').style.display = 'block';
-            document.getElementById('passBtn').style.display = 'inline-block';
-            document.getElementById('passwordInput').focus();
-        }
-
-        function verifyPassword() {
-            const input = document.getElementById('passwordInput');
-            const val = input.value;
-            
-            // Parol tekshiruvi (Mijoz tomonida oddiy tekshiruv)
-            if (val === "XURSHIDAXONEEEY") {
-                input.blur(); // Klaviturani yopish
-                grantAccess();
-            } else {
-                showError("XATO! RUXSAT YO'Q.");
-                input.value = "";
-                tg.HapticFeedback.notificationOccurred('error');
+                checkAvailability();
             }
         }
 
-        // --- 2. MOBIL REJIMI ---
-        function initMobileMode() {
-            if (bm.isInited) {
-                checkBioAvailability();
-            } else {
-                bm.init(() => checkBioAvailability());
-            }
-        }
-
-        function checkBioAvailability() {
+        function checkAvailability() {
             if (!bm.isBiometricAvailable) {
-                // Agar telefonda barmoq izi bo'lmasa, parolga o'tamiz
-                initDesktopMode();
+                statusEl.innerText = "Qurilmada biometriya mavjud emas.";
+                statusEl.style.color = "#ff453a";
+                btn.style.display = "none";
                 return;
             }
             
-            document.getElementById('status').innerText = "Identifikatsiya talab etiladi.";
-            const btn = document.getElementById('bioBtn');
-            btn.style.display = 'inline-block';
-            
-            // Foydalanuvchiga qulaylik uchun avtomatik so'rash
-            triggerBiometrics();
+            if (!bm.isAccessGranted) {
+                statusEl.innerText = "Biometrik ruxsat kerak.";
+                btn.innerText = "Ruxsat Berish";
+                btn.onclick = requestAccess;
+            } else {
+                statusEl.innerText = "Avtorizatsiya tayyor.";
+                btn.innerText = "Barmoq izi / Face ID";
+                btn.onclick = authenticate;
+            }
         }
 
-        function triggerBiometrics() {
-            bm.authenticate({ 
-                reason: "ΛNØM Tizimiga kirishni tasdiqlang" 
-            }, (success) => {
-                if (success) {
-                    grantAccess();
+        function requestAccess() {
+            bm.requestAccess({
+                reason: "Shifrlangan xabarlarni ochish uchun"
+            }, (granted) => {
+                if (granted) {
+                    checkAvailability();
                 } else {
-                    showError("Biometrik tasdiq bekor qilindi.");
+                    statusEl.innerText = "Ruxsat rad etildi.";
                 }
             });
         }
 
-        // --- MUVOFFAQIYAT ---
-        function grantAccess() {
-            const statusDiv = document.getElementById('status');
-            statusDiv.innerText = "✅ TASDIQLANDI!\nSEANS: 3 SOAT";
-            statusDiv.style.color = "#00FF41";
-            
-            document.getElementById('pc-controls').style.display = 'none';
-            document.getElementById('bioBtn').style.display = 'none';
-            
-            tg.HapticFeedback.notificationOccurred('success');
+        function authenticate() {
+            bm.authenticate({
+                reason: "Xabarni deshifrlash"
+            }, (success, token) => {
+                if (success) {
+                    statusEl.innerText = "Muvaffaqiyatli! Yuborilmoqda...";
+                    statusEl.style.color = "#30d158";
+                    
+                    // Формируем пакет данных для отправки боту
+                    // Важно: в реальном проекте здесь нужно добавить подпись initData
+                    const data = JSON.stringify({
+                        action: "BIO_SUCCESS",
+                        timestamp: Date.now(),
+                        token: token |
 
-            // ESP32 ga maxfiy kalitni yuborish
-            // Bu ma'lumot faqat Telegram ichki tarmog'i orqali botga boradi
-            tg.sendData("BIOMETRIC_SUCCESS_KEY_9988");
-            
-            // Oynani yopish (avtomatik)
-            setTimeout(() => { 
-                tg.close(); 
-            }, 800);
+| "valid"
+                    });
+                    
+                    // Отправка данных боту. Это вызовет событие "web_app_data" на ESP32
+                    tg.sendData(data); 
+                } else {
+                    statusEl.innerText = "Xatolik yuz berdi. Qaytadan urinib ko'ring.";
+                    statusEl.style.color = "#ff453a";
+                }
+            });
         }
 
-        function showError(msg) {
-            const statusDiv = document.getElementById('status');
-            statusDiv.innerText = "❌ " + msg;
-            statusDiv.style.color = "red";
-            setTimeout(() => {
-                statusDiv.innerText = "Qayta urinib ko'ring...";
-                statusDiv.style.color = "#00FF41";
-            }, 2000);
+        // Запуск при загрузке
+        if (bm) {
+            initBiometrics();
+        } else {
+            statusEl.innerText = "Telegram versiyasi eskirgan.";
         }
     </script>
 </body>
