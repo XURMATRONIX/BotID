@@ -19,63 +19,117 @@
             text-align: center;
         }
         .icon { font-size: 80px; margin-bottom: 20px; text-shadow: 0 0 10px #00FF41; }
-        h1 { font-size: 24px; margin-bottom: 10px; text-transform: uppercase; letter-spacing: 2px; }
+        h1 { font-size: 24px; margin-bottom: 10px; text-transform: uppercase; }
         #status { margin-top: 20px; font-weight: bold; font-size: 16px; margin-bottom: 20px;}
         
+        /* Inputlar dizayni */
         input {
             background: #000; border: 1px solid #00FF41; color: #00FF41;
             padding: 10px; font-size: 18px; text-align: center;
             font-family: 'Courier New', Courier, monospace;
             outline: none; border-radius: 5px; width: 80%;
-            display: none; margin-bottom: 15px;
+            display: none; 
+            margin-bottom: 15px;
         }
         
         button {
             background: transparent; border: 2px solid #00FF41; color: #00FF41;
             padding: 15px 30px; font-size: 16px; cursor: pointer; text-transform: uppercase;
-            border-radius: 5px; display: none; margin-top: 10px; transition: 0.3s;
+            border-radius: 5px; display: none; margin-top: 10px;
         }
-        button:hover { background: #00FF41; color: #000; box-shadow: 0 0 15px #00FF41; }
+        button:hover { background: #002200; box-shadow: 0 0 10px #00FF41; }
     </style>
 </head>
 <body>
     <div class="icon">🔒</div>
     <h1 id="title">ΛNØM SECURE NODE</h1>
     
-    <div id="status">Tizim tahlili...</div>
+    <div id="status">Qurilma tahlili...</div>
 
-    <!-- WINDOWS UCHUN PAROL -->
-    <input type="text" id="passwordInput" placeholder="MAXSUS FRAZA">
-    <button onclick="checkPassword()" id="passBtn">TASDIQLASH</button>
+    <button onclick="triggerWindowsHello()" id="winHelloBtn">WINDOWS TIZIMIGA KIRISH</button>
+
+    <div id="phraseSection" style="display:none; width: 100%; display: flex; flex-direction: column; align-items: center;">
+        <input type="text" id="passwordInput" placeholder="MAXSUS FRAZA">
+        <button onclick="checkPassword()" id="passBtn">TASDIQLASH</button>
+    </div>
     
-    <!-- TELEFON UCHUN BIOMETRIYA -->
     <button onclick="startBioAuth()" id="bioBtn">BIOMETRIYA</button>
 
     <script>
         const tg = window.Telegram.WebApp;
         tg.expand();
         tg.setHeaderColor('#000000');
-        tg.setBackgroundColor('#000000');
 
         const bm = tg.BiometricManager;
         const platform = tg.platform;
 
         document.addEventListener('DOMContentLoaded', () => {
-            // Desktop (Windows/Mac/Linux) aniqlash
+            // Agar Windows/Desktop bo'lsa
             if (platform === 'tdesktop' || platform === 'weba' || platform === 'web' || platform === 'unknown') {
-                showPasswordMode();
-            } else {
-                // Mobil qurilmalar
+                initDesktopMode();
+            } 
+            // Agar Mobil bo'lsa
+            else {
                 if (bm.isInited) checkBioAvailability();
                 else bm.init(checkBioAvailability);
             }
         });
 
-        // --- WINDOWS REJIMI ---
-        function showPasswordMode() {
-            document.getElementById('status').innerText = "Tizim qulflangan.\nMAXSUS FRAZA KIRITING:";
-            document.getElementById('passwordInput').style.display = 'block';
-            document.getElementById('passBtn').style.display = 'inline-block';
+        // --- 1. DESKTOP (WINDOWS) LOGIKASI ---
+        function initDesktopMode() {
+            document.getElementById('status').innerText = "Tizim qulflangan.\nWindows paroli talab etiladi.";
+            // Faqat Windows Hello tugmasini chiqaramiz
+            document.getElementById('winHelloBtn').style.display = 'inline-block';
+        }
+
+        // WebAuthn orqali Windows Hello chaqirish
+        async function triggerWindowsHello() {
+            document.getElementById('status').innerText = "Windows so'rovini tasdiqlang...";
+            
+            // Dummy challenge (shunchaki Windows oynasini chaqirish uchun)
+            const publicKey = {
+                challenge: new Uint8Array([1, 2, 3, 4, 5, 6, 7, 8]), 
+                rp: { name: "ΛNØM Secure Node" },
+                user: {
+                    id: new Uint8Array([1]),
+                    name: "admin@anom.net",
+                    displayName: "ΛNØM Admin"
+                },
+                pubKeyCredParams: [{ type: "public-key", alg: -7 }],
+                authenticatorSelection: {
+                    authenticatorAttachment: "platform", // Bu Windows Hello ni majburlaydi
+                    userVerification: "required" // PIN yoki Barmoq izi shart
+                },
+                timeout: 60000
+            };
+
+            try {
+                // Bu qator Windows Hello oynasini ochadi
+                await navigator.credentials.create({ publicKey });
+                
+                // Agar xatolik bermasa, demak foydalanuvchi PIN ni to'g'ri terdi
+                showPhraseInput();
+            } catch (err) {
+                console.error(err);
+                document.getElementById('status').innerText = "❌ Windows tasdiqlanmadi!";
+                document.getElementById('status').style.color = "red";
+            }
+        }
+
+        function showPhraseInput() {
+            // Windows Hello tugmasini yashiramiz
+            document.getElementById('winHelloBtn').style.display = 'none';
+            
+            // Fraza kiritish joyini ochamiz
+            document.getElementById('status').innerText = "Windows tasdiqlandi.\nMAXSUS FRAZANI KIRITING:";
+            document.getElementById('status').style.color = "#00FF41";
+            
+            // Inputlarni ko'rsatish (Flex emas, inline-block yoki block)
+            const passInput = document.getElementById('passwordInput');
+            const passBtn = document.getElementById('passBtn');
+            passInput.style.display = 'block';
+            passBtn.style.display = 'inline-block';
+            passInput.focus();
         }
 
         function checkPassword() {
@@ -83,18 +137,21 @@
             const statusDiv = document.getElementById('status');
 
             if (val === "XURSHIDAXONEEEY") {
-                successRoutine();
+                statusDiv.innerText = "✅ TASDIQLANDI! SEANS: 3 SOAT";
+                statusDiv.style.color = "#00FF41";
+                sendSuccess();
             } else {
-                statusDiv.innerText = "❌ XATO! RUXSAT YO'Q.";
+                statusDiv.innerText = "❌ XATO! FRAZA NO'TO'G'RI.";
                 statusDiv.style.color = "red";
-                tg.HapticFeedback.notificationOccurred('error');
             }
         }
 
-        // --- BIOMETRIYA REJIMI ---
+        // --- 2. MOBIL (BIOMETRIYA) LOGIKASI ---
         function checkBioAvailability() {
             if (!bm.isBiometricAvailable) {
-                showPasswordMode(); // Biometriya yo'q bo'lsa parolga o'tamiz
+                // Mobil lekin biometriya yo'q bo'lsa -> Fraza so'raymiz
+                showPhraseInput(); 
+                document.getElementById('winHelloBtn').style.display = 'none';
                 return;
             }
             document.getElementById('status').innerText = "Barmoq izi talab etiladi.";
@@ -103,27 +160,22 @@
         }
 
         function startBioAuth() {
-            bm.authenticate({ reason: "ΛNØM Shifrlash Kalitini Ochish" }, (success) => {
+            bm.authenticate({ reason: "ΛNØM Tizimiga kirish" }, (success) => {
                 if (success) {
-                    successRoutine();
+                    document.getElementById('status').innerText = "✅ TASDIQLANDI! SEANS: 3 SOAT";
+                    document.getElementById('status').style.color = "#00FF41";
+                    sendSuccess();
                 } else {
-                    document.getElementById('status').innerText = "❌ Tasdiqlanmadi.";
+                    document.getElementById('status').innerText = "❌ Xatolik.";
                     document.getElementById('status').style.color = "red";
                 }
             });
         }
 
-        // --- MUVOFFAQIYAT ---
-        function successRoutine() {
-            const statusDiv = document.getElementById('status');
-            statusDiv.innerText = "✅ TASDIQLANDI!\nSEANS: 3 SOAT";
-            statusDiv.style.color = "#00FF41";
-            
-            // Muhim: ESP32 kutayotgan kalit so'z
+        // --- YAKUNIY SIGNAL ---
+        function sendSuccess() {
             tg.sendData("BIOMETRIC_SUCCESS_KEY_9988");
-            
-            // Oynani yopish
-            setTimeout(() => { tg.close(); }, 800);
+            setTimeout(() => { tg.close(); }, 1000);
         }
     </script>
 </body>
