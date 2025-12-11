@@ -1,77 +1,89 @@
 <!DOCTYPE html>
-<html>
+<html lang="uz">
 <head>
     <meta charset="utf-8">
-    <title>ΛNØM Security</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, minimum-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <title>ΛNØM Identity</title>
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
     <style>
-        body { 
-            background-color: var(--tg-theme-bg-color, #000); 
-            color: var(--tg-theme-text-color, #fff); 
-            display: flex; 
-            flex-direction: column; 
-            align-items: center; 
-            justify-content: center; 
-            height: 100vh; 
-            font-family: sans-serif;
+        body {
+            background-color: #000000;
+            color: #00FF41;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+            margin: 0;
+            font-family: 'Courier New', Courier, monospace;
+            text-align: center;
         }
-        #status { margin-top: 20px; font-size: 18px; }
-        .fingerprint-icon { font-size: 64px; }
+        .icon { font-size: 80px; margin-bottom: 20px; text-shadow: 0 0 10px #00FF41; }
+        h1 { font-size: 24px; margin-bottom: 10px; text-transform: uppercase; }
+        #status { margin-top: 20px; font-weight: bold; font-size: 16px; }
+        button {
+            background: transparent; border: 2px solid #00FF41; color: #00FF41;
+            padding: 15px 30px; font-size: 16px; cursor: pointer; text-transform: uppercase;
+            border-radius: 5px; margin-top: 20px;
+        }
     </style>
 </head>
 <body>
-    <div class="fingerprint-icon">🔒</div>
-    <div id="status">Biometrik tekshiruv...</div>
+    <div class="icon">🔒</div>
+    <h1>ΛNØM SECURE NODE</h1>
+    <div id="status">Biometrik tizim yuklanmoqda...</div>
+    <button onclick="startAuth()" id="authBtn" style="display:none;">TEKSHIRUVNI BOSHLASH</button>
 
     <script>
         const tg = window.Telegram.WebApp;
-        tg.expand(); // Oynani to'liq ochish
+        tg.expand();
+        tg.setHeaderColor('#000000'); // Header rangini qora qilish
 
         const bm = tg.BiometricManager;
 
-        function initBiometrics() {
-            if (!bm.isInited) {
-                bm.init(() => {
-                    checkBiometrics();
-                });
-            } else {
-                checkBiometrics();
-            }
-        }
+        document.addEventListener('DOMContentLoaded', () => {
+            if (bm.isInited) { checkAvailability(); }
+            else { bm.init(checkAvailability); }
+        });
 
-        function checkBiometrics() {
+        function checkAvailability() {
+            const statusDiv = document.getElementById('status');
+            const btn = document.getElementById('authBtn');
+
             if (!bm.isBiometricAvailable) {
-                document.getElementById('status').innerText = "Biometriya topilmadi!";
+                statusDiv.innerText = "⚠️ Biometriya topilmadi! Kod orqali kiring.";
+                statusDiv.style.color = "red";
+                // Agar biometriya bo'lmasa, shunchaki tugma bosilganda ruxsat berish (test uchun)
+                // Yoki parolli kirishni taklif qilish mumkin
                 return;
             }
-
-            bm.requestAccess({
-                reason: "ΛNØM tizimiga kirish uchun tasdiqlang"
-            }, (granted) => {
-                if (granted) {
-                    authenticate();
-                } else {
-                    document.getElementById('status').innerText = "Ruxsat berilmadi!";
-                }
-            });
+            statusDiv.innerText = "Tizim tayyor.";
+            btn.style.display = "inline-block";
+            startAuth(); // Avtomatik so'rash
         }
 
-        function authenticate() {
-            bm.authenticate({
-                reason: "Shaxsingizni tasdiqlang"
-            }, (success, token) => {
+        function startAuth() {
+            const statusDiv = document.getElementById('status');
+            statusDiv.innerText = "Barmoq izini bosing...";
+            
+            bm.authenticate({ reason: "ΛNØM Tizimiga kirish" }, (success, token) => {
                 if (success) {
-                    document.getElementById('status').innerText = "✅ Tasdiqlandi!";
-                    // MUVAFFAQIYATLI BO'LSA, ESP32 GA XABAR YUBORAMIZ
-                    tg.sendData("BIOMETRIC_SUCCESS_KEY_9988"); 
+                    statusDiv.innerText = "✅ TASDIQLANDI! YUBORILMOQDA...";
+                    statusDiv.style.color = "#00FF41";
+                    
+                    // 1. Ma'lumotni yuborish
+                    tg.sendData("BIOMETRIC_SUCCESS_KEY_9988");
+                    
+                    // 2. Oynani majburan yopish (0.5 sek kechikish bilan)
+                    setTimeout(() => {
+                        tg.close();
+                    }, 500);
                 } else {
-                    document.getElementById('status').innerText = "❌ Xatolik!";
+                    statusDiv.innerText = "❌ XATOLIK: Tasdiqlanmadi.";
+                    statusDiv.style.color = "red";
                 }
             });
         }
-
-        // Ilova ochilishi bilan tekshirishni boshlash
-        initBiometrics();
     </script>
 </body>
 </html>
