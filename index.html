@@ -1,182 +1,155 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="uz">
 <head>
-    <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, minimum-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-    <title>ΛNØM Identity</title>
-    <script src="https://telegram.org/js/telegram-web-app.js"></script>
-    <style>
-        body {
-            background-color: #000000;
-            color: #00FF41;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            justify-content: center;
-            height: 100vh;
-            margin: 0;
-            font-family: 'Courier New', Courier, monospace;
-            text-align: center;
-        }
-        .icon { font-size: 80px; margin-bottom: 20px; text-shadow: 0 0 10px #00FF41; }
-        h1 { font-size: 24px; margin-bottom: 10px; text-transform: uppercase; }
-        #status { margin-top: 20px; font-weight: bold; font-size: 16px; margin-bottom: 20px;}
-        
-        /* Inputlar dizayni */
-        input {
-            background: #000; border: 1px solid #00FF41; color: #00FF41;
-            padding: 10px; font-size: 18px; text-align: center;
-            font-family: 'Courier New', Courier, monospace;
-            outline: none; border-radius: 5px; width: 80%;
-            display: none; 
-            margin-bottom: 15px;
-        }
-        
-        button {
-            background: transparent; border: 2px solid #00FF41; color: #00FF41;
-            padding: 15px 30px; font-size: 16px; cursor: pointer; text-transform: uppercase;
-            border-radius: 5px; display: none; margin-top: 10px;
-        }
-        button:hover { background: #002200; box-shadow: 0 0 10px #00FF41; }
-    </style>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>ΛNØM Mini-Auth</title>
+  <style>
+    body { font-family: system-ui, -apple-system, Roboto, "Segoe UI", Arial; padding: 18px; background:#f7f7fb; color:#111; }
+    .card { max-width:720px; margin:24px auto; background:white; padding:20px; border-radius:12px; box-shadow:0 6px 24px rgba(20,20,40,0.06); }
+    h1{margin:0 0 8px;font-size:20px}
+    p{margin:8px 0 14px; color:#444}
+    button{display:inline-block;padding:10px 14px;border-radius:10px;border:0;background:#2563eb;color:white;font-weight:600;}
+    .note{font-size:13px;color:#666;margin-top:12px}
+    #log{white-space:pre-wrap;margin-top:12px;background:#f0f4ff;padding:8px;border-radius:8px;font-size:13px;color:#123;}
+  </style>
 </head>
 <body>
-    <div class="icon">🔒</div>
-    <h1 id="title">ΛNØM SECURE NODE</h1>
-    
-    <div id="status">Qurilma tahlili...</div>
+  <div class="card">
+    <h1>ΛNØM — Biometrik tasdiq</h1>
+    <p>Bu Mini-App yordamida biometrik (Platform WebAuthn) yoki boshqa brauzer autentifikatori orqali tasdiqlaysiz. Tasdiqlashdan so‘ng Mini-App sizga imzolangan token yuboradi va avtomatik yopiladi.</p>
 
-    <button onclick="triggerWindowsHello()" id="winHelloBtn">WINDOWS TIZIMIGA KIRISH</button>
-
-    <div id="phraseSection" style="display:none; width: 100%; display: flex; flex-direction: column; align-items: center;">
-        <input type="text" id="passwordInput" placeholder="MAXSUS FRAZA">
-        <button onclick="checkPassword()" id="passBtn">TASDIQLASH</button>
+    <div>
+      <button id="btnAuth">Biometrik tasdiqlash</button>
+      <button id="btnDemoJWT" style="margin-left:10px;background:#10b981">Demo: yubor token</button>
     </div>
-    
-    <button onclick="startBioAuth()" id="bioBtn">BIOMETRIYA</button>
 
-    <script>
-        const tg = window.Telegram.WebApp;
-        tg.expand();
-        tg.setHeaderColor('#000000');
+    <div class="note">Eslatma: demo versiya — HMAC siri faqat test uchun client-side'da saqlanadi. Production uchun server-side imzolashni tashkil eting.</div>
+    <div id="log"></div>
+  </div>
 
-        const bm = tg.BiometricManager;
-        const platform = tg.platform;
+<script>
+  // ----- CONFIG (MAQSADLI: SERVER-OR-SAFE HMAC in production) -----
+  // Demo HMAC secret (DON'T USE IN PRODUCTION!). Replace or provision securely.
+  const DEMO_HMAC_SECRET = "change_this_to_real_secret_on_server";
 
-        document.addEventListener('DOMContentLoaded', () => {
-            // Agar Windows/Desktop bo'lsa
-            if (platform === 'tdesktop' || platform === 'weba' || platform === 'web' || platform === 'unknown') {
-                initDesktopMode();
-            } 
-            // Agar Mobil bo'lsa
-            else {
-                if (bm.isInited) checkBioAvailability();
-                else bm.init(checkBioAvailability);
-            }
-        });
+  // Helper: base64url encode
+  function base64UrlEncode(buf) {
+    let b64 = btoa(String.fromCharCode.apply(null, new Uint8Array(buf)));
+    return b64.replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');
+  }
+  // Helper: UTF-8 to ArrayBuffer
+  function str2ab(str) {
+    const encoder = new TextEncoder();
+    return encoder.encode(str);
+  }
 
-        // --- 1. DESKTOP (WINDOWS) LOGIKASI ---
-        function initDesktopMode() {
-            document.getElementById('status').innerText = "Tizim qulflangan.\nWindows paroli talab etiladi.";
-            // Faqat Windows Hello tugmasini chiqaramiz
-            document.getElementById('winHelloBtn').style.display = 'inline-block';
-        }
+  // HMAC-SHA256 using WebCrypto
+  async function hmacSign(secret, message) {
+    const key = await crypto.subtle.importKey(
+      "raw",
+      str2ab(secret),
+      { name: "HMAC", hash: "SHA-256" },
+      false,
+      ["sign"]
+    );
+    const sig = await crypto.subtle.sign("HMAC", key, str2ab(message));
+    return new Uint8Array(sig);
+  }
 
-        // WebAuthn orqali Windows Hello chaqirish
-        async function triggerWindowsHello() {
-            document.getElementById('status').innerText = "Windows so'rovini tasdiqlang...";
-            
-            // Dummy challenge (shunchaki Windows oynasini chaqirish uchun)
-            const publicKey = {
-                challenge: new Uint8Array([1, 2, 3, 4, 5, 6, 7, 8]), 
-                rp: { name: "ΛNØM Secure Node" },
-                user: {
-                    id: new Uint8Array([1]),
-                    name: "admin@anom.net",
-                    displayName: "ΛNØM Admin"
-                },
-                pubKeyCredParams: [{ type: "public-key", alg: -7 }],
-                authenticatorSelection: {
-                    authenticatorAttachment: "platform", // Bu Windows Hello ni majburlaydi
-                    userVerification: "required" // PIN yoki Barmoq izi shart
-                },
-                timeout: 60000
-            };
+  // Create JWT-like token: header.payload.signature (base64url)
+  async function createToken(payloadObj) {
+    const header = { alg: "HS256", typ: "JWT" };
+    const headerB64 = base64UrlEncode(str2ab(JSON.stringify(header)));
+    const payloadB64 = base64UrlEncode(str2ab(JSON.stringify(payloadObj)));
+    const signing = headerB64 + "." + payloadB64;
+    const sigBuf = await hmacSign(DEMO_HMAC_SECRET, signing);
+    const sigB64 = base64UrlEncode(sigBuf);
+    return signing + "." + sigB64;
+  }
 
-            try {
-                // Bu qator Windows Hello oynasini ochadi
-                await navigator.credentials.create({ publicKey });
-                
-                // Agar xatolik bermasa, demak foydalanuvchi PIN ni to'g'ri terdi
-                showPhraseInput();
-            } catch (err) {
-                console.error(err);
-                document.getElementById('status').innerText = "❌ Windows tasdiqlanmadi!";
-                document.getElementById('status').style.color = "red";
-            }
-        }
+  // WebAuthn / platform authenticator trigger (best-effort)
+  async function webAuthnFlow() {
+    // NOTE: In production you must provide a real challenge from server.
+    // Here we use a random challenge for demonstration (may fail on some browsers).
+    const challenge = new Uint8Array(32);
+    window.crypto.getRandomValues(challenge);
 
-        function showPhraseInput() {
-            // Windows Hello tugmasini yashiramiz
-            document.getElementById('winHelloBtn').style.display = 'none';
-            
-            // Fraza kiritish joyini ochamiz
-            document.getElementById('status').innerText = "Windows tasdiqlandi.\nMAXSUS FRAZANI KIRITING:";
-            document.getElementById('status').style.color = "#00FF41";
-            
-            // Inputlarni ko'rsatish (Flex emas, inline-block yoki block)
-            const passInput = document.getElementById('passwordInput');
-            const passBtn = document.getElementById('passBtn');
-            passInput.style.display = 'block';
-            passBtn.style.display = 'inline-block';
-            passInput.focus();
-        }
+    // PublicKeyCredentialRequestOptions - requireUserVerification: "required" for biometrics
+    const publicKey = {
+      challenge: challenge,
+      timeout: 60000,
+      userVerification: "preferred", // "required" may force biometric
+      allowCredentials: [] // empty for demo (platform authenticator should accept)
+    };
 
-        function checkPassword() {
-            const val = document.getElementById('passwordInput').value;
-            const statusDiv = document.getElementById('status');
+    try {
+      const assertion = await navigator.credentials.get({ publicKey });
+      // success; create token
+      const uid = (window.Telegram && Telegram.WebApp && Telegram.WebApp.initDataUnsafe && Telegram.WebApp.initDataUnsafe.user) ? Telegram.WebApp.initDataUnsafe.user.id : 0;
+      const exp = Math.floor(Date.now()/1000) + (3 * 60 * 60); // +3 hours
+      const payload = { isAuthenticated: true, exp: exp, user_id: uid, method: "webauthn" };
+      const token = await createToken(payload);
+      log("Biometric successful. Token created.");
+      sendTokenToBot(token);
+    } catch(e) {
+      log("WebAuthn failed or not supported: " + e);
+      // fallback: create demo token anyway (useful for testing)
+      const uid = (window.Telegram && Telegram.WebApp && Telegram.WebApp.initDataUnsafe && Telegram.WebApp.initDataUnsafe.user) ? Telegram.WebApp.initDataUnsafe.user.id : 0;
+      const exp = Math.floor(Date.now()/1000) + (3 * 60 * 60);
+      const payload = { isAuthenticated: true, exp: exp, user_id: uid, method: "fallback" };
+      const token = await createToken(payload);
+      log("Fallback token created.");
+      sendTokenToBot(token);
+    }
+  }
 
-            if (val === "XURSHIDAXONEEEY") {
-                statusDiv.innerText = "✅ TASDIQLANDI! SEANS: 3 SOAT";
-                statusDiv.style.color = "#00FF41";
-                sendSuccess();
-            } else {
-                statusDiv.innerText = "❌ XATO! FRAZA NO'TO'G'RI.";
-                statusDiv.style.color = "red";
-            }
-        }
+  function log(msg) {
+    const el = document.getElementById('log');
+    el.textContent += msg + "\n";
+  }
 
-        // --- 2. MOBIL (BIOMETRIYA) LOGIKASI ---
-        function checkBioAvailability() {
-            if (!bm.isBiometricAvailable) {
-                // Mobil lekin biometriya yo'q bo'lsa -> Fraza so'raymiz
-                showPhraseInput(); 
-                document.getElementById('winHelloBtn').style.display = 'none';
-                return;
-            }
-            document.getElementById('status').innerText = "Barmoq izi talab etiladi.";
-            document.getElementById('bioBtn').style.display = 'inline-block';
-            startBioAuth();
-        }
+  // Send token to Telegram bot via WebApp.sendData (bot receives as message)
+  function sendTokenToBot(token) {
+    try {
+      if (window.Telegram && Telegram.WebApp) {
+        Telegram.WebApp.sendData(token);
+        // auto close modal after a short delay to allow sendData to deliver
+        setTimeout(()=> {
+          try { Telegram.WebApp.close(); } catch(e){}
+        }, 700);
+        log("Token yuborildi va modal yopilmoqda...");
+      } else {
+        // Not in Telegram WebApp; show token for manual copy
+        log("Mini-App not in Telegram. Token:\n" + token);
+      }
+    } catch (e) {
+      log("sendData error: " + e);
+    }
+  }
 
-        function startBioAuth() {
-            bm.authenticate({ reason: "ΛNØM Tizimiga kirish" }, (success) => {
-                if (success) {
-                    document.getElementById('status').innerText = "✅ TASDIQLANDI! SEANS: 3 SOAT";
-                    document.getElementById('status').style.color = "#00FF41";
-                    sendSuccess();
-                } else {
-                    document.getElementById('status').innerText = "❌ Xatolik.";
-                    document.getElementById('status').style.color = "red";
-                }
-            });
-        }
+  // DEMO button to create token without WebAuthn (for environment that lacks it)
+  document.getElementById('btnDemoJWT').addEventListener('click', async () => {
+    const uid = (window.Telegram && Telegram.WebApp && Telegram.WebApp.initDataUnsafe && Telegram.WebApp.initDataUnsafe.user) ? Telegram.WebApp.initDataUnsafe.user.id : 0;
+    const exp = Math.floor(Date.now()/1000) + (3 * 60 * 60);
+    const payload = { isAuthenticated: true, exp: exp, user_id: uid, method: "demo" };
+    const token = await createToken(payload);
+    log("Demo token tayyorlandi, yuborilmoqda...");
+    sendTokenToBot(token);
+  });
 
-        // --- YAKUNIY SIGNAL ---
-        function sendSuccess() {
-            tg.sendData("BIOMETRIC_SUCCESS_KEY_9988");
-            setTimeout(() => { tg.close(); }, 1000);
-        }
-    </script>
+  document.getElementById('btnAuth').addEventListener('click', async () => {
+    log("Biometrik auth boshlanmoqda...");
+    await webAuthnFlow();
+  });
+
+  // If embedded inside Telegram WebApp, expand and show theme
+  window.addEventListener('load', function() {
+    if (window.Telegram && Telegram.WebApp) {
+      Telegram.WebApp.ready();
+      try { Telegram.WebApp.expand(); } catch(e){}
+    }
+  });
+</script>
 </body>
 </html>
